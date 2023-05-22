@@ -2,6 +2,12 @@
 
 pub use pallet::*;
 
+#[cfg(test)]
+mod mock;
+
+#[cfg(test)]
+mod tests;
+
 #[frame_support::pallet]
 pub mod pallet {
 	use frame_support::pallet_prelude::*;
@@ -10,7 +16,7 @@ pub mod pallet {
 
 	#[pallet::pallet]
 	#[pallet::generate_store(pub(super) trait Store)]
-	pub struct Pallet<T>(_);
+	pub struct Pallet<T>(PhantomData<T>);
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
@@ -35,9 +41,9 @@ pub mod pallet {
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		ClaimCreated(T::AccountId, Vec<u8>),
-		ClaimRevoked(T::AccountId, Vec<u8>),
-		ClaimTransferred(T::AccountId, Vec<u8>, T::AccountId),
+		ClaimCreated(T::AccountId, BoundedVec<u8, T::MaxClaimLength>),
+		ClaimRevoked(T::AccountId, BoundedVec<u8, T::MaxClaimLength>),
+		ClaimTransferred(T::AccountId, BoundedVec<u8, T::MaxClaimLength>, T::AccountId),
 	}
 
 	#[pallet::error]
@@ -54,11 +60,11 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::weight(0)]
-		pub fn created_claim(origin: OriginFor<T>, claim: Vec<u8>) -> DispatchResultWithPostInfo {
+		pub fn created_claim(
+			origin: OriginFor<T>,
+			bounded_claim: BoundedVec<u8, T::MaxClaimLength>,
+		) -> DispatchResultWithPostInfo {
 			let sender = ensure_signed(origin)?;
-
-			let bounded_claim = BoundedVec::<u8, T::MaxClaimLength>::try_from(claim.clone())
-				.map_err(|_| Error::<T>::ClaimTooLang)?;
 			ensure!(!Proofs::<T>::contains_key(&bounded_claim), Error::<T>::ProofAlreadyExist);
 
 			Proofs::<T>::insert(
@@ -66,25 +72,25 @@ pub mod pallet {
 				(sender.clone(), frame_system::Pallet::<T>::block_number()),
 			);
 
-			Self::deposit_event(Event::<T>::ClaimCreated(sender, claim));
+			Self::deposit_event(Event::<T>::ClaimCreated(sender, bounded_claim));
 
 			Ok(().into())
 		}
 
 		#[pallet::weight(0)]
-		pub fn revoke_claim(origin: OriginFor<T>, claim: Vec<u8>) -> DispatchResultWithPostInfo {
+		pub fn revoke_claim(
+			origin: OriginFor<T>,
+			bounded_claim: BoundedVec<u8, T::MaxClaimLength>,
+		) -> DispatchResultWithPostInfo {
 			let sender = ensure_signed(origin)?;
 
-			let bounded_claim = BoundedVec::<u8, T::MaxClaimLength>::try_from(claim.clone())
-				.map_err(|_| Error::<T>::ClaimTooLang)?;
-
-			let (owner, _) = Proofs::<T>::get(&bounded_claim).ok_or(Error::<T>::ClaimTooLang)?;
+			let (owner, _) = Proofs::<T>::get(&bounded_claim).ok_or(Error::<T>::ClaimNotExist)?;
 
 			ensure!(owner == sender, Error::<T>::NotClaimOwner);
 
 			Proofs::<T>::remove(&bounded_claim);
 
-			Self::deposit_event(Event::<T>::ClaimRevoked(sender, claim));
+			Self::deposit_event(Event::<T>::ClaimRevoked(sender, bounded_claim));
 
 			Ok(().into())
 		}
@@ -92,15 +98,12 @@ pub mod pallet {
 		#[pallet::weight(0)]
 		pub fn transfer_claim(
 			origin: OriginFor<T>,
-			claim: Vec<u8>,
+			bounded_claim: BoundedVec<u8, T::MaxClaimLength>,
 			to: T::AccountId,
 		) -> DispatchResultWithPostInfo {
 			let sender = ensure_signed(origin)?;
 
-			let bounded_claim = BoundedVec::<u8, T::MaxClaimLength>::try_from(claim.clone())
-				.map_err(|_| Error::<T>::ClaimTooLang)?;
-
-			let (owner, _) = Proofs::<T>::get(&bounded_claim).ok_or(Error::<T>::ClaimTooLang)?;
+			let (owner, _) = Proofs::<T>::get(&bounded_claim).ok_or(Error::<T>::ClaimNotExist)?;
 
 			ensure!(owner == sender, Error::<T>::NotClaimOwner);
 
@@ -109,7 +112,7 @@ pub mod pallet {
 				(to.clone(), frame_system::Pallet::<T>::block_number()),
 			);
 
-			Self::deposit_event(Event::<T>::ClaimTransferred(sender, claim, to));
+			Self::deposit_event(Event::<T>::ClaimTransferred(sender, bounded_claim, to));
 
 			Ok(().into())
 		}
