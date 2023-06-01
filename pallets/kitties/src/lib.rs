@@ -18,7 +18,6 @@ pub mod pallet {
 	use frame_support::traits::{Len, Randomness};
 	use frame_system::pallet_prelude::*;
 	use sp_io::hashing::blake2_128;
-	use std::default::Default;
 
 	#[pallet::pallet]
 	#[pallet::generate_store(pub(super) trait Store)]
