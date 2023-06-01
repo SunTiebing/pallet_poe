@@ -113,6 +113,7 @@ pub mod pallet {
 			Ok(())
 		}
 
+		/// Breed a new Kitty.
 		#[pallet::call_index(1)]
 		#[pallet::weight(10_000 + T::DbWeight::get().writes(1).ref_time())]
 		pub fn breed(
@@ -129,12 +130,7 @@ pub mod pallet {
 			let kitty_1 = Kitties::<T>::get(kitty_id_1).ok_or(Error::<T>::InvalidKittyId)?;
 			let kitty_2 = Kitties::<T>::get(kitty_id_2).ok_or(Error::<T>::InvalidKittyId)?;
 
-			let selector = Self::random_value(&who);
-			let mut data = [0u8; 16];
-			for i in 0..kitty_1.0.len() {
-				data[i] = (kitty_1.0[i] & selector[i]) | (kitty_2.0[i] & !selector[i]);
-			}
-			let kitty = Kitty(data);
+			let kitty = Kitty(Self::random_value_from_two_kitty(&who, kitty_1, kitty_2));
 
 			Kitties::<T>::insert(kitty_id, &kitty);
 			KittyOwner::<T>::insert(kitty_id, &who);
@@ -145,6 +141,7 @@ pub mod pallet {
 			Ok(())
 		}
 
+		/// Transfer a Kitty.
 		#[pallet::call_index(2)]
 		#[pallet::weight(10_000 + T::DbWeight::get().writes(1).ref_time())]
 		pub fn transfer(
@@ -164,25 +161,41 @@ pub mod pallet {
 		}
 	}
 
-	/// Get the next available Kitty ID.
-	/// This function will get the next available Kitty ID, and increment the NextKittyId counter.
 	impl<T: Config> Pallet<T> {
+		/// Get the next available Kitty ID.
+		/// This function will get the next available Kitty ID, and increment the NextKittyId counter.
 		fn get_next_id() -> Result<KittyId, DispatchError> {
 			NextKittyId::<T>::try_mutate(|id| -> Result<KittyId, DispatchError> {
 				let current_id = *id;
-				*id =
-					id.checked_add(1).ok_or::<DispatchError>(Error::<T>::KittiesCountOverflow.into())?;
+				*id = id
+					.checked_add(1)
+					.ok_or::<DispatchError>(Error::<T>::KittiesCountOverflow.into())?;
 				Ok(current_id)
 			})
 		}
 
-		fn random_value(sender: &T::AccountId) -> [u8; 16] {
+		/// Get random value.
+		pub fn random_value(sender: &T::AccountId) -> [u8; 16] {
 			let payload = (
 				T::Randomness::random_seed(),
 				&sender,
 				<frame_system::Pallet<T>>::extrinsic_index(),
 			);
 			payload.using_encoded(blake2_128)
+		}
+
+		/// Get random value from parent kitty.
+		pub fn random_value_from_two_kitty(
+			owner: &T::AccountId,
+			kitty_1: Kitty,
+			kitty_2: Kitty,
+		) -> [u8; 16] {
+			let selector = Self::random_value(&owner);
+			let mut data = [0u8; 16];
+			for i in 0..kitty_1.0.len() {
+				data[i] = (kitty_1.0[i] & selector[i]) | (kitty_2.0[i] & !selector[i]);
+			}
+			data
 		}
 	}
 }
