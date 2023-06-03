@@ -17,8 +17,8 @@ fn create_kitty_works() {
 		assert_eq!(events.len(), 1);
 		assert!(matches!(
 			&events[0].event,
-			RuntimeEvent::KittiesModule(crate::Event::KittyCreated { owner, .. })
-				if *owner == 1
+			RuntimeEvent::KittiesModule(crate::Event::KittyCreated { owner, kitty_id, kitty })
+				if *owner == 1 && *kitty_id == 0 && *kitty == KittiesModule::kitties(0).unwrap()
 		));
 	});
 }
@@ -44,13 +44,10 @@ fn breed_kitty_works() {
 		let events = mock::System::events();
 		// because creating two kitties produce two events
 		assert_eq!(events.len(), 3);
-		let kitty_1 = KittiesModule::kitties(0).unwrap();
-		let kitty_2 = KittiesModule::kitties(1).unwrap();
 		assert!(matches!(
 			&events[2].event,
 			RuntimeEvent::KittiesModule(crate::Event::KittyBreed { owner, kitty_id, kitty })
-				if *owner == 1 && *kitty_id == 2 && *kitty == Kitty(
-					KittiesModule::random_value_from_two_kitty(&1, kitty_1, kitty_2))
+				if *owner == 1 && *kitty_id == 2 && *kitty == KittiesModule::kitties(2).unwrap()
 		));
 
 		assert_eq!(KittiesModule::next_kitty_id(), 3);
