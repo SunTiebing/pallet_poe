@@ -37,6 +37,7 @@ pub use frame_support::{
 	},
 	StorageValue,
 };
+use frame_support::PalletId;
 pub use frame_system::Call as SystemCall;
 pub use pallet_balances::Call as BalancesCall;
 pub use pallet_timestamp::Call as TimestampCall;
@@ -254,6 +255,8 @@ impl pallet_balances::Config for Runtime {
 
 parameter_types! {
 	pub FeeMultiplier: Multiplier = Multiplier::one();
+	pub KittyPalletId: PalletId = PalletId(*b"py/kitty");
+	pub KittyPrice: Balance = EXISTENTIAL_DEPOSIT * 10;
 }
 
 impl pallet_transaction_payment::Config for Runtime {
@@ -283,6 +286,9 @@ impl pallet_poe::Config for Runtime {
 impl pallet_kitties::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type Randomness = RandomnessCollectiveFlip;
+	type Currency = Balances;
+	type KittyPrice = KittyPrice;
+	type PalletId = KittyPalletId;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
