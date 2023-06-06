@@ -11,8 +11,11 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
+mod migrations;
+
 #[frame_support::pallet]
 pub mod pallet {
+	use crate::migrations;
 	use core::marker::PhantomData;
 	use frame_support::pallet_prelude::*;
 	use frame_support::traits::{Currency, ExistenceRequirement, Len, Randomness};
@@ -21,8 +24,11 @@ pub mod pallet {
 	use sp_io::hashing::blake2_128;
 	use sp_runtime::traits::AccountIdConversion;
 
+	const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+
 	#[pallet::pallet]
 	#[pallet::generate_store(pub(super) trait Store)]
+	#[pallet::storage_version(STORAGE_VERSION)]
 	pub struct Pallet<T>(PhantomData<T>);
 
 	pub type KittyId = u32;
@@ -33,7 +39,10 @@ pub mod pallet {
 	#[derive(
 		Encode, Decode, Default, Clone, Copy, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen,
 	)]
-	pub struct Kitty(pub [u8; 16]);
+	pub struct Kitty {
+		pub dna: [u8; 16],
+		pub name: [u8; 4],
+	}
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
@@ -118,17 +127,24 @@ pub mod pallet {
 		NotOnSale,
 	}
 
+	#[pallet::hooks]
+	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+		fn on_runtime_upgrade() -> Weight {
+			migrations::v1::migrate::<T>()
+		}
+	}
+
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		/// Create a new Kitty.
 		/// This function will create a new Kitty, save it to the Kitties map, and emit a KittyCreated event.
 		#[pallet::call_index(0)]
 		#[pallet::weight(10_000 + T::DbWeight::get().writes(1).ref_time())]
-		pub fn create_kitty(origin: OriginFor<T>) -> DispatchResult {
+		pub fn create_kitty(origin: OriginFor<T>, name: [u8; 4]) -> DispatchResult {
 			let who = ensure_signed(origin)?;
 
 			let kitty_id = Self::get_next_id()?;
-			let kitty = Kitty(Self::random_value(&who));
+			let kitty = Kitty { dna: Self::random_value(&who), name };
 
 			let kitty_price = T::KittyPrice::get();
 			T::Currency::transfer(
@@ -152,6 +168,7 @@ pub mod pallet {
 			origin: OriginFor<T>,
 			kitty_id_1: KittyId,
 			kitty_id_2: KittyId,
+			name: [u8; 4],
 		) -> DispatchResult {
 			let who = ensure_signed(origin)?;
 			ensure!(kitty_id_1 != kitty_id_2, Error::<T>::SameKittyId);
@@ -162,7 +179,8 @@ pub mod pallet {
 			let kitty_1 = Kitties::<T>::get(kitty_id_1).ok_or(Error::<T>::InvalidKittyId)?;
 			let kitty_2 = Kitties::<T>::get(kitty_id_2).ok_or(Error::<T>::InvalidKittyId)?;
 
-			let kitty = Kitty(Self::random_value_from_two_kitty(&who, kitty_1, kitty_2));
+			let kitty =
+				Kitty { dna: Self::random_value_from_two_kitty(&who, kitty_1, kitty_2), name };
 
 			let kitty_price = T::KittyPrice::get();
 			T::Currency::transfer(
@@ -271,8 +289,8 @@ pub mod pallet {
 		) -> [u8; 16] {
 			let selector = Self::random_value(&owner);
 			let mut data = [0u8; 16];
-			for i in 0..kitty_1.0.len() {
-				data[i] = (kitty_1.0[i] & selector[i]) | (kitty_2.0[i] & !selector[i]);
+			for i in 0..kitty_1.dna.len() {
+				data[i] = (kitty_1.dna[i] & selector[i]) | (kitty_2.dna[i] & !selector[i]);
 			}
 			data
 		}
