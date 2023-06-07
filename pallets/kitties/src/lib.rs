@@ -17,9 +17,11 @@ mod migrations;
 pub mod pallet {
 	use crate::migrations;
 	use core::marker::PhantomData;
-	use frame_support::pallet_prelude::*;
-	use frame_support::traits::{Currency, ExistenceRequirement, Len, Randomness};
-	use frame_support::PalletId;
+	use frame_support::{
+		pallet_prelude::*,
+		traits::{Currency, ExistenceRequirement, Len, Randomness},
+		PalletId,
+	};
 	use frame_system::pallet_prelude::*;
 	use sp_io::hashing::blake2_128;
 	use sp_runtime::traits::AccountIdConversion;
@@ -41,7 +43,7 @@ pub mod pallet {
 	)]
 	pub struct Kitty {
 		pub dna: [u8; 16],
-		pub name: [u8; 4],
+		pub name: [u8; 8],
 	}
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
@@ -130,17 +132,20 @@ pub mod pallet {
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 		fn on_runtime_upgrade() -> Weight {
-			migrations::v1::migrate::<T>()
+			migrations::v1::migrate::<T>();
+			migrations::v2::migrate::<T>();
+			Weight::zero()
 		}
 	}
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		/// Create a new Kitty.
-		/// This function will create a new Kitty, save it to the Kitties map, and emit a KittyCreated event.
+		/// This function will create a new Kitty, save it to the Kitties map, and emit a
+		/// KittyCreated event.
 		#[pallet::call_index(0)]
 		#[pallet::weight(10_000 + T::DbWeight::get().writes(1).ref_time())]
-		pub fn create_kitty(origin: OriginFor<T>, name: [u8; 4]) -> DispatchResult {
+		pub fn create_kitty(origin: OriginFor<T>, name: [u8; 8]) -> DispatchResult {
 			let who = ensure_signed(origin)?;
 
 			let kitty_id = Self::get_next_id()?;
@@ -168,7 +173,7 @@ pub mod pallet {
 			origin: OriginFor<T>,
 			kitty_id_1: KittyId,
 			kitty_id_2: KittyId,
-			name: [u8; 4],
+			name: [u8; 8],
 		) -> DispatchResult {
 			let who = ensure_signed(origin)?;
 			ensure!(kitty_id_1 != kitty_id_2, Error::<T>::SameKittyId);
@@ -260,7 +265,8 @@ pub mod pallet {
 
 	impl<T: Config> Pallet<T> {
 		/// Get the next available Kitty ID.
-		/// This function will get the next available Kitty ID, and increment the NextKittyId counter.
+		/// This function will get the next available Kitty ID, and increment the NextKittyId
+		/// counter.
 		fn get_next_id() -> Result<KittyId, DispatchError> {
 			NextKittyId::<T>::try_mutate(|id| -> Result<KittyId, DispatchError> {
 				let current_id = *id;
