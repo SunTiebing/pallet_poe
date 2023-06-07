@@ -26,7 +26,7 @@ pub mod pallet {
 	use sp_io::hashing::blake2_128;
 	use sp_runtime::traits::AccountIdConversion;
 
-	const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+	const STORAGE_VERSION: StorageVersion = StorageVersion::new(2);
 
 	#[pallet::pallet]
 	#[pallet::generate_store(pub(super) trait Store)]
