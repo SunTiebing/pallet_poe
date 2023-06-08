@@ -1,8 +1,13 @@
 use crate as pallet_kitties;
-use frame_support::traits::{ConstU16, ConstU64};
+use frame_support::{
+	parameter_types,
+	traits::{ConstU16, ConstU64},
+	PalletId,
+};
 use frame_system as system;
+use pallet_balances;
 use pallet_randomness_collective_flip;
-use sp_core::H256;
+use sp_core::{ConstU128, H256};
 use sp_runtime::{
 	testing::Header,
 	traits::{BlakeTwo256, IdentityLookup},
@@ -21,8 +26,12 @@ frame_support::construct_runtime!(
 		System: frame_system,
 		KittiesModule: pallet_kitties,
 		Randomness: pallet_randomness_collective_flip,
+		Balances: pallet_balances,
 	}
 );
+
+/// Balance of an account.
+pub type Balance = u128;
 
 impl system::Config for Test {
 	type BaseCallFilter = frame_support::traits::Everything;
@@ -42,7 +51,7 @@ impl system::Config for Test {
 	type BlockHashCount = ConstU64<250>;
 	type Version = ();
 	type PalletInfo = PalletInfo;
-	type AccountData = ();
+	type AccountData = pallet_balances::AccountData<u128>;
 	type OnNewAccount = ();
 	type OnKilledAccount = ();
 	type SystemWeightInfo = ();
@@ -51,17 +60,45 @@ impl system::Config for Test {
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 }
 
+/// Existential deposit.
+pub const EXISTENTIAL_DEPOSIT: u128 = 500;
+
+parameter_types! {
+	pub KittyPalletId: PalletId = PalletId(*b"py/kitty");
+	pub KittyPrice: Balance = EXISTENTIAL_DEPOSIT * 10;
+}
+
 impl pallet_kitties::Config for Test {
 	type RuntimeEvent = RuntimeEvent;
 	type Randomness = Randomness;
+	type Currency = Balances;
+	type KittyPrice = KittyPrice;
+	type PalletId = KittyPalletId;
 }
 
 impl pallet_randomness_collective_flip::Config for Test {}
 
-// Build genesis storage according to the mock runtime.
+impl pallet_balances::Config for Test {
+	/// The type for recording an account's balance.
+	type Balance = Balance;
+	type DustRemoval = ();
+	/// The ubiquitous event type.
+	type RuntimeEvent = RuntimeEvent;
+	type ExistentialDeposit = ConstU128<EXISTENTIAL_DEPOSIT>;
+	type AccountStore = System;
+	type WeightInfo = ();
+	type MaxLocks = ();
+	type MaxReserves = ();
+	type ReserveIdentifier = [u8; 8];
+}
+
 pub fn new_test_ext() -> sp_io::TestExternalities {
-	let mut ext: sp_io::TestExternalities =
-		system::GenesisConfig::default().build_storage::<Test>().unwrap().into();
+	let mut ext = frame_system::GenesisConfig::default().build_storage::<Test>().unwrap();
+	// set initial balance
+	pallet_balances::GenesisConfig::<Test> { balances: vec![(1, 10_000_000), (2, 10_000_000)] }
+		.assimilate_storage(&mut ext)
+		.unwrap();
+	let mut ext: sp_io::TestExternalities = ext.into();
 	ext.execute_with(|| System::set_block_number(1));
 	ext
 }
