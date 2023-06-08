@@ -1,0 +1,1 @@
+# cargo build successfully![img.png](img/cargo_build.png)# cargo test successfully![img_1.png](img/cargo_test.png)# node starts successfully![img_2.png](img/node_start.png)

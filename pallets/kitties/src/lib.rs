@@ -232,7 +232,7 @@ pub mod pallet {
 				.ok_or::<DispatchError>(Error::<T>::InvalidKittyId.into())?;
 
 			ensure!(KittyOwner::<T>::get(kitty_id) == Some(who.clone()), Error::<T>::NotOwner);
-			ensure!(KittyOnSale::<T>::get(kitty_id).is_some(), Error::<T>::AlreadyOnSale);
+			ensure!(KittyOnSale::<T>::get(kitty_id).is_none(), Error::<T>::AlreadyOnSale);
 
 			KittyOnSale::<T>::insert(kitty_id, ());
 			Self::deposit_event(Event::KittyOnSale { owner: who, kitty_id });

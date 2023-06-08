@@ -61,7 +61,7 @@ impl system::Config for Test {
 }
 
 /// Existential deposit.
-pub const EXISTENTIAL_DEPOSIT: u128 = 500;
+pub const EXISTENTIAL_DEPOSIT: u128 = 1;
 
 parameter_types! {
 	pub KittyPalletId: PalletId = PalletId(*b"py/kitty");
@@ -94,8 +94,8 @@ impl pallet_balances::Config for Test {
 
 pub fn new_test_ext() -> sp_io::TestExternalities {
 	let mut ext = frame_system::GenesisConfig::default().build_storage::<Test>().unwrap();
-	// set initial balance
-	pallet_balances::GenesisConfig::<Test> { balances: vec![(1, 10_000_000), (2, 10_000_000)] }
+	// set initial balance, user 3‘balance is too low to do a transaction
+	pallet_balances::GenesisConfig::<Test> { balances: vec![(1, 10_000_000), (2, 10_000_000), (3, 5)] }
 		.assimilate_storage(&mut ext)
 		.unwrap();
 	let mut ext: sp_io::TestExternalities = ext.into();
