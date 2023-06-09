@@ -21,7 +21,7 @@ pub fn migrate<T: Config>() -> Weight {
 	let current_version = Pallet::<T>::current_storage_version();
 
 	// works for version 1 to 2 or version 0 to 2
-	if on_chain_version != 1 || on_chain_version != 0 {
+	if on_chain_version != 1 && on_chain_version != 0 {
 		return Weight::zero()
 	}
 	if current_version != 2 {
