@@ -26,7 +26,8 @@ pub mod pallet {
 	use sp_io::hashing::blake2_128;
 	use sp_runtime::traits::AccountIdConversion;
 
-	const STORAGE_VERSION: StorageVersion = StorageVersion::new(2);
+	const STORAGE_VERSION_NUM: u16 = 2;
+	const STORAGE_VERSION: StorageVersion = StorageVersion::new(STORAGE_VERSION_NUM);
 
 	#[pallet::pallet]
 	#[pallet::generate_store(pub(super) trait Store)]
@@ -132,7 +133,16 @@ pub mod pallet {
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 		fn on_runtime_upgrade() -> Weight {
-			migrations::v2::migrate::<T>()
+			let weight = migrations::v2::migrate::<T>();
+
+			// update storage version
+			let current_version = Pallet::<T>::on_chain_storage_version();
+			let target_version = STORAGE_VERSION_NUM;
+			if current_version < target_version {
+				StorageVersion::new(target_version).put::<Self>();
+			}
+
+			weight
 		}
 	}
 

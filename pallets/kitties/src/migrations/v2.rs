@@ -20,6 +20,9 @@ pub fn migrate<T: Config>() -> Weight {
 	let on_chain_version = Pallet::<T>::on_chain_storage_version();
 	let current_version = Pallet::<T>::current_storage_version();
 
+	log::info!("---------------------on_chain_version:{:?}------------------", on_chain_version);
+	log::info!("---------------------current_version:{:?}------------------", current_version);
+
 	// works for version 1 to 2 or version 0 to 2
 	if on_chain_version != 1 && on_chain_version != 0 {
 		return Weight::zero()
