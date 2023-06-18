@@ -18,6 +18,7 @@ pub mod pallet {
 	use crate::migrations;
 	use core::marker::PhantomData;
 	use frame_support::{
+		inherent::Vec,
 		pallet_prelude::*,
 		traits::{Currency, ExistenceRequirement, Len, Randomness},
 		PalletId,
@@ -26,6 +27,7 @@ pub mod pallet {
 	use sp_io::hashing::blake2_128;
 	use sp_runtime::traits::AccountIdConversion;
 
+	const ON_CHAIN_KEY: &[u8] = b"kitties_prefix";
 	const STORAGE_VERSION_NUM: u16 = 2;
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(STORAGE_VERSION_NUM);
 
@@ -115,6 +117,10 @@ pub mod pallet {
 			owner: T::AccountId,
 			kitty_id: KittyId,
 		},
+		SetOffchainCoin {
+			who: T::AccountId,
+			coin: BoundedVec<u8, ConstU32<3>>,
+		},
 	}
 
 	#[pallet::error]
@@ -143,6 +149,35 @@ pub mod pallet {
 			}
 
 			weight
+		}
+
+		fn offchain_worker(_block_number: T::BlockNumber) {
+			let coin_data_option: Option<Vec<u8>> = sp_io::offchain::local_storage_get(
+				sp_core::offchain::StorageKind::PERSISTENT,
+				&ON_CHAIN_KEY,
+			);
+
+			if let Some(coin_data_vec) = coin_data_option {
+				let coin_data = BoundedVec::<u8, ConstU32<3>>::decode(&mut &coin_data_vec[..]);
+
+				match coin_data {
+					Ok(coin_data) => {
+						log::info!("OCW ==> got key: {:?}", ON_CHAIN_KEY);
+						log::info!(
+							"OCW ==> got value: {:?}",
+							sp_std::str::from_utf8(&coin_data).unwrap()
+						);
+
+						// If you want to submit the result back to the chain,
+						// you can submit a signed or unsigned extrinsic here.
+					},
+					Err(_) => {
+						log::error!("OCW ==> Failed to decode offchain coin data");
+					},
+				};
+			} else {
+				log::warn!("OCW ==> No coin data in offchain local storage");
+			}
 		}
 	}
 
@@ -267,6 +302,22 @@ pub mod pallet {
 			KittyOnSale::<T>::remove(kitty_id);
 			KittyOwner::<T>::insert(kitty_id, &who);
 			Self::deposit_event(Event::BuyKitty { buyer: who, owner, kitty_id });
+			Ok(())
+		}
+
+		#[pallet::call_index(5)]
+		#[pallet::weight(10_000 + T::DbWeight::get().writes(1).ref_time())]
+		pub fn set_offchain_coin(
+			origin: OriginFor<T>,
+			coin: BoundedVec<u8, ConstU32<3>>,
+		) -> DispatchResult {
+			let who = ensure_signed(origin)?;
+
+			log::info!("EXTRINSIC ==> set key: {:?}", ON_CHAIN_KEY);
+			log::info!("EXTRINSIC ==> set value: {:?}", sp_std::str::from_utf8(&coin).unwrap());
+			sp_io::offchain_index::set(&ON_CHAIN_KEY, &coin.encode());
+
+			Self::deposit_event(Event::SetOffchainCoin { who, coin });
 			Ok(())
 		}
 	}
