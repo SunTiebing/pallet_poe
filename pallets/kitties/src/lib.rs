@@ -11,11 +11,12 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
+mod coin_price;
 mod migrations;
 
 #[frame_support::pallet]
 pub mod pallet {
-	use crate::migrations;
+	use crate::{coin_price::CoinPriceInfo, migrations};
 	use core::marker::PhantomData;
 	use frame_support::{
 		inherent::Vec,
@@ -24,8 +25,9 @@ pub mod pallet {
 		PalletId,
 	};
 	use frame_system::pallet_prelude::*;
+	use sp_core::offchain::Duration;
 	use sp_io::hashing::blake2_128;
-	use sp_runtime::traits::AccountIdConversion;
+	use sp_runtime::{offchain::http, traits::AccountIdConversion};
 
 	const ON_CHAIN_KEY: &[u8] = b"kitties_prefix";
 	const STORAGE_VERSION_NUM: u16 = 2;
@@ -152,31 +154,12 @@ pub mod pallet {
 		}
 
 		fn offchain_worker(_block_number: T::BlockNumber) {
-			let coin_data_option: Option<Vec<u8>> = sp_io::offchain::local_storage_get(
-				sp_core::offchain::StorageKind::PERSISTENT,
-				&ON_CHAIN_KEY,
-			);
+			let _coin = Self::fetch_coin_info();
 
-			if let Some(coin_data_vec) = coin_data_option {
-				let coin_data = BoundedVec::<u8, ConstU32<3>>::decode(&mut &coin_data_vec[..]);
-
-				match coin_data {
-					Ok(coin_data) => {
-						log::info!("OCW ==> got key: {:?}", ON_CHAIN_KEY);
-						log::info!(
-							"OCW ==> got value: {:?}",
-							sp_std::str::from_utf8(&coin_data).unwrap()
-						);
-
-						// If you want to submit the result back to the chain,
-						// you can submit a signed or unsigned extrinsic here.
-					},
-					Err(_) => {
-						log::error!("OCW ==> Failed to decode offchain coin data");
-					},
-				};
+			if let Ok(info) = Self::fetch_coin_price_info() {
+				log::info!("OCW ==> coin Info: {:?}", info);
 			} else {
-				log::warn!("OCW ==> No coin data in offchain local storage");
+				log::info!("OCW ==> Error while fetch coin info!");
 			}
 		}
 	}
@@ -362,6 +345,63 @@ pub mod pallet {
 
 		fn get_pallet_account_id() -> T::AccountId {
 			T::PalletId::get().into_account_truncating()
+		}
+
+		fn fetch_coin_price_info() -> Result<CoinPriceInfo, http::Error> {
+			// prepare for send request
+			let deadline = sp_io::offchain::timestamp().add(Duration::from_millis(118_000));
+			let request =
+				http::Request::get("https://data.binance.com/api/v3/avgPrice?symbol=BTCUSDT");
+			let pending = request
+				.add_header("User-Agent", "Substrate-Offchain-Worker")
+				.deadline(deadline)
+				.send()
+				.map_err(|_| http::Error::IoError)?;
+			let response =
+				pending.try_wait(deadline).map_err(|_| http::Error::DeadlineReached)??;
+			if response.code != 200 {
+				log::warn!("Unexpected status code: {}", response.code);
+				return Err(http::Error::Unknown)
+			}
+			let body = response.body().collect::<Vec<u8>>();
+			let body_str = sp_std::str::from_utf8(&body).map_err(|_| {
+				log::warn!("No UTF8 body");
+				http::Error::Unknown
+			})?;
+
+			// parse the response str
+			let coin_price: CoinPriceInfo =
+				serde_json::from_str(body_str).map_err(|_| http::Error::Unknown)?;
+
+			Ok(coin_price)
+		}
+
+		fn fetch_coin_info() -> BoundedVec<u8, ConstU32<3>> {
+			let mut res = BoundedVec::<u8, ConstU32<3>>::try_from(b"BTC".to_vec()).unwrap();
+			let coin_data_option: Option<Vec<u8>> = sp_io::offchain::local_storage_get(
+				sp_core::offchain::StorageKind::PERSISTENT,
+				&ON_CHAIN_KEY,
+			);
+
+			if let Some(coin_data_vec) = coin_data_option {
+				let coin_data = BoundedVec::<u8, ConstU32<3>>::decode(&mut &coin_data_vec[..]);
+				match coin_data {
+					Ok(coin_data) => {
+						log::info!("OCW ==> got key: {:?}", ON_CHAIN_KEY);
+						log::info!(
+							"OCW ==> got value: {:?}",
+							sp_std::str::from_utf8(&coin_data).unwrap()
+						);
+						res = coin_data;
+					},
+					Err(_) => {
+						log::error!("OCW ==> Failed to decode offchain coin data");
+					},
+				};
+			} else {
+				log::warn!("OCW ==> No coin data in offchain local storage");
+			}
+			res
 		}
 	}
 }
