@@ -3,7 +3,7 @@ use core::fmt;
 use frame_support::inherent::Vec;
 use serde::{Deserialize, Deserializer};
 
-#[derive(Deserialize, Encode, Decode)]
+#[derive(Deserialize, Encode, Decode, Clone, PartialEq, Eq, TypeInfo)]
 pub(crate) struct CoinPriceInfo {
 	mins: u32,
 	#[serde(deserialize_with = "de_string_to_bytes")]

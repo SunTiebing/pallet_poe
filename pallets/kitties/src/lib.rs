@@ -14,6 +14,37 @@ mod tests;
 mod coin_price;
 mod migrations;
 
+use sp_core::crypto::KeyTypeId;
+
+pub const KEY_TYPE: KeyTypeId = KeyTypeId(*b"btc!");
+pub mod crypto {
+	use super::KEY_TYPE;
+	use sp_core::sr25519::Signature as Sr25519Signature;
+	use sp_runtime::{
+		app_crypto::{app_crypto, sr25519},
+		traits::Verify,
+		MultiSignature, MultiSigner,
+	};
+	app_crypto!(sr25519, KEY_TYPE);
+
+	pub struct TestAuthId;
+
+	impl frame_system::offchain::AppCrypto<MultiSigner, MultiSignature> for TestAuthId {
+		type RuntimeAppPublic = Public;
+		type GenericSignature = sp_core::sr25519::Signature;
+		type GenericPublic = sp_core::sr25519::Public;
+	}
+
+	// implemented for mock runtime in test
+	impl frame_system::offchain::AppCrypto<<Sr25519Signature as Verify>::Signer, Sr25519Signature>
+		for TestAuthId
+	{
+		type RuntimeAppPublic = Public;
+		type GenericSignature = sp_core::sr25519::Signature;
+		type GenericPublic = sp_core::sr25519::Public;
+	}
+}
+
 #[frame_support::pallet]
 pub mod pallet {
 	use crate::{coin_price::CoinPriceInfo, migrations};
@@ -24,10 +55,28 @@ pub mod pallet {
 		traits::{Currency, ExistenceRequirement, Len, Randomness},
 		PalletId,
 	};
-	use frame_system::pallet_prelude::*;
+	use frame_system::{
+		offchain::{
+			AppCrypto, CreateSignedTransaction, SendUnsignedTransaction, SignedPayload, Signer,
+			SigningTypes,
+		},
+		pallet_prelude::*,
+	};
 	use sp_core::offchain::Duration;
 	use sp_io::hashing::blake2_128;
 	use sp_runtime::{offchain::http, traits::AccountIdConversion};
+
+	#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, scale_info::TypeInfo)]
+	pub struct Payload<Public> {
+		coin_price: CoinPriceInfo,
+		public: Public,
+	}
+
+	impl<T: SigningTypes> SignedPayload<T> for Payload<T::Public> {
+		fn public(&self) -> T::Public {
+			self.public.clone()
+		}
+	}
 
 	const ON_CHAIN_KEY: &[u8] = b"kitties_prefix";
 	const STORAGE_VERSION_NUM: u16 = 2;
@@ -53,7 +102,7 @@ pub mod pallet {
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
-	pub trait Config: frame_system::Config {
+	pub trait Config: frame_system::Config + CreateSignedTransaction<Call<Self>> {
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
 		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
 		type Randomness: Randomness<Self::Hash, Self::BlockNumber>;
@@ -61,6 +110,8 @@ pub mod pallet {
 		#[pallet::constant]
 		type KittyPrice: Get<BalanceOf<Self>>;
 		type PalletId: Get<PalletId>;
+		/// The identifier type for an offchain worker.
+		type AuthorityId: AppCrypto<Self::Public, Self::Signature>;
 	}
 
 	#[pallet::storage]
@@ -157,9 +208,40 @@ pub mod pallet {
 			let _coin = Self::fetch_coin_info();
 
 			if let Ok(info) = Self::fetch_coin_price_info() {
-				log::info!("OCW ==> coin Info: {:?}", info);
+				log::info!("OCW ==> coin price info: {:?}", info);
+
+				// Retrieve the signer to sign the payload
+				let signer = Signer::<T, T::AuthorityId>::any_account();
+
+				// `send_unsigned_transaction` is returning a type of `Option<(Account<T>,
+				// Result<(), ()>)>`. 	 The returned result means:
+				// 	 - `None`: no account is available for sending transaction
+				// 	 - `Some((account, Ok(())))`: transaction is successfully sent
+				// 	 - `Some((account, Err(())))`: error occurred when sending the transaction
+				if let Some((_, res)) = signer.send_unsigned_transaction(
+					// this line is to prepare and return payload
+					|acct| Payload { coin_price: info.clone(), public: acct.public.clone() },
+					|payload, signature| Call::unsigned_extrinsic_with_signed_payload {
+						payload,
+						signature,
+					},
+				) {
+					match res {
+						Ok(()) => {
+							log::info!(
+								"OCW ==> unsigned tx with signed payload successfully sent."
+							);
+						},
+						Err(()) => {
+							log::error!("OCW ==> sending unsigned tx with signed payload failed.");
+						},
+					};
+				} else {
+					// The case of `None`: no account is available for sending
+					log::error!("OCW ==> No local account available");
+				}
 			} else {
-				log::info!("OCW ==> Error while fetch coin info!");
+				log::info!("OCW ==> Error while fetch coin price info!");
 			}
 		}
 	}
@@ -303,6 +385,23 @@ pub mod pallet {
 			Self::deposit_event(Event::SetOffchainCoin { who, coin });
 			Ok(())
 		}
+
+		#[pallet::call_index(6)]
+		#[pallet::weight(10_000 + T::DbWeight::get().writes(1).ref_time())]
+		pub fn unsigned_extrinsic_with_signed_payload(
+			origin: OriginFor<T>,
+			payload: Payload<T::Public>,
+			_signature: T::Signature,
+		) -> DispatchResult {
+			ensure_none(origin)?;
+
+			log::info!(
+				"OCW ==> in call unsigned_extrinsic_with_signed_payload: {:?}",
+				payload.kuaidi100_price_data
+			);
+
+			Ok(())
+		}
 	}
 
 	impl<T: Config> Pallet<T> {
@@ -402,6 +501,38 @@ pub mod pallet {
 				log::warn!("OCW ==> No coin data in offchain local storage");
 			}
 			res
+		}
+	}
+
+	#[pallet::validate_unsigned]
+	impl<T: Config> ValidateUnsigned for Pallet<T> {
+		type Call = Call<T>;
+
+		/// Validate unsigned call to this module.
+		///
+		/// By default unsigned transactions are disallowed, but implementing the validator
+		/// here we make sure that some particular calls (the ones produced by offchain worker)
+		/// are being whitelisted and marked as valid.
+		fn validate_unsigned(_source: TransactionSource, call: &Self::Call) -> TransactionValidity {
+			const UNSIGNED_TXS_PRIORITY: u64 = 100;
+			let valid_tx = |provide| {
+				ValidTransaction::with_tag_prefix("my-pallet")
+					.priority(UNSIGNED_TXS_PRIORITY) // please define `UNSIGNED_TXS_PRIORITY` before this line
+					.and_provides([&provide])
+					.longevity(3)
+					.propagate(true)
+					.build()
+			};
+
+			match call {
+				Call::unsigned_extrinsic_with_signed_payload { ref payload, ref signature } => {
+					if !SignedPayload::<T>::verify::<T::AuthorityId>(payload, signature.clone()) {
+						return InvalidTransaction::BadProof.into()
+					}
+					valid_tx(b"unsigned_extrinsic_with_signed_payload".to_vec())
+				},
+				_ => InvalidTransaction::Call.into(),
+			}
 		}
 	}
 }

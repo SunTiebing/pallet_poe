@@ -14,18 +14,80 @@ mod tests;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
+use frame_system::{
+	offchain::{
+		AppCrypto, CreateSignedTransaction, SendUnsignedTransaction,
+		SignedPayload, Signer, SigningTypes,
+	},
+};
+use sp_runtime::{
+	transaction_validity::{InvalidTransaction, TransactionValidity, ValidTransaction},
+	RuntimeDebug,
+};
+use codec::{Decode, Encode};
+
+
+use sp_core::crypto::KeyTypeId;
+
+pub const KEY_TYPE: KeyTypeId = KeyTypeId(*b"btc!");
+pub mod crypto {
+	use super::KEY_TYPE;
+	use sp_core::sr25519::Signature as Sr25519Signature;
+	use sp_runtime::{
+		app_crypto::{app_crypto, sr25519},
+		traits::Verify,
+		MultiSignature, MultiSigner,
+	};
+	app_crypto!(sr25519, KEY_TYPE);
+
+	pub struct TestAuthId;
+
+	impl frame_system::offchain::AppCrypto<MultiSigner, MultiSignature> for TestAuthId {
+		type RuntimeAppPublic = Public;
+		type GenericSignature = sp_core::sr25519::Signature;
+		type GenericPublic = sp_core::sr25519::Public;
+	}
+
+	// implemented for mock runtime in test
+	impl frame_system::offchain::AppCrypto<<Sr25519Signature as Verify>::Signer, Sr25519Signature>
+	for TestAuthId
+	{
+		type RuntimeAppPublic = Public;
+		type GenericSignature = sp_core::sr25519::Signature;
+		type GenericPublic = sp_core::sr25519::Public;
+	}
+}
+
+
+
 #[frame_support::pallet]
 pub mod pallet {
+	use super::*;
 	use frame_support::pallet_prelude::*;
 	use frame_system::pallet_prelude::*;
 
+
+	#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, scale_info::TypeInfo)]
+	pub struct Payload<Public> {
+		number: u64,
+		public: Public,
+	}
+
+	impl<T: SigningTypes> SignedPayload<T> for Payload<T::Public> {
+		fn public(&self) -> T::Public {
+			self.public.clone()
+		}
+	}
+
 	#[pallet::pallet]
-	#[pallet::generate_store(pub(super) trait Store)]
 	pub struct Pallet<T>(_);
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
-	pub trait Config: frame_system::Config {
+	// pub trait Config: frame_system::Config + frame_system::offchain::SendTransactionTypes<Call<Self>> {
+	pub trait Config: frame_system::Config + CreateSignedTransaction<Call<Self>> {
+		/// The identifier type for an offchain worker.
+		type AuthorityId: AppCrypto<Self::Public, Self::Signature>;
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
 		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
 	}
@@ -96,6 +158,46 @@ pub mod pallet {
 					<Something<T>>::put(new);
 					Ok(())
 				},
+			}
+		}
+	}
+
+	#[pallet::hooks]
+	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+		/// Offchain worker entry point.
+		fn offchain_worker(_block_number: T::BlockNumber) {
+			// let value: u64 = 42;
+			// // This is your call to on-chain extrinsic together with any necessary parameters.
+			// let call = Call::submit_data_unsigned { key: value };
+
+			// // `submit_unsigned_transaction` returns a type of `Result<(), ()>`
+			// //	 ref: https://paritytech.github.io/substrate/master/frame_system/offchain/struct.SubmitTransaction.html
+			// _ = SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(call.into())
+			// 	.map_err(|_| {
+			// 	log::error!("OCW ==> Failed in offchain_unsigned_tx");
+			// });
+
+			let number: u64 = 42;
+			// Retrieve the signer to sign the payload
+			let signer = Signer::<T, T::AuthorityId>::any_account();
+
+			// `send_unsigned_transaction` is returning a type of `Option<(Account<T>, Result<(), ()>)>`.
+			//	 The returned result means:
+			//	 - `None`: no account is available for sending transaction
+			//	 - `Some((account, Ok(())))`: transaction is successfully sent
+			//	 - `Some((account, Err(())))`: error occurred when sending the transaction
+			if let Some((_, res)) = signer.send_unsigned_transaction(
+				// this line is to prepare and return payload
+				|acct| Payload { number, public: acct.public.clone() },
+				|payload, signature| Call::unsigned_extrinsic_with_signed_payload { payload, signature },
+			) {
+				match res {
+					Ok(()) => {log::info!("OCW ==> unsigned tx with signed payload successfully sent.");}
+					Err(()) => {log::error!("OCW ==> sending unsigned tx with signed payload failed.");}
+				};
+			} else {
+				// The case of `None`: no account is available for sending
+				log::error!("OCW ==> No local account available");
 			}
 		}
 	}
