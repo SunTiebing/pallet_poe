@@ -397,7 +397,7 @@ pub mod pallet {
 
 			log::info!(
 				"OCW ==> in call unsigned_extrinsic_with_signed_payload: {:?}",
-				payload.kuaidi100_price_data
+				payload.coin_price
 			);
 
 			Ok(())

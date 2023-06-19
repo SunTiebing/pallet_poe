@@ -92,7 +92,7 @@ pub fn new_partial(
 		let keystore = keystore_container.sync_keystore();
 		sp_keystore::SyncCryptoStore::sr25519_generate_new(
 			&*keystore,
-			node_template_runtime::pallet_kuaidi100::KEY_TYPE,
+			node_template_runtime::pallet_kitties::KEY_TYPE,
 			Some("//Alice"),
 		)
 			.expect("Creating key with account Alice should succeed.");

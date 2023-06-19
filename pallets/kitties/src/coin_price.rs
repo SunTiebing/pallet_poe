@@ -2,6 +2,7 @@ use codec::{Decode, Encode};
 use core::fmt;
 use frame_support::inherent::Vec;
 use serde::{Deserialize, Deserializer};
+use scale_info::TypeInfo;
 
 #[derive(Deserialize, Encode, Decode, Clone, PartialEq, Eq, TypeInfo)]
 pub(crate) struct CoinPriceInfo {

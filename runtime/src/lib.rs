@@ -50,6 +50,12 @@ pub use sp_runtime::{Perbill, Permill};
 /// Import the template pallet.
 pub use pallet_template;
 
+/// Import the kitties pallet.
+pub use pallet_kitties;
+
+/// Import the poe pallet.
+pub use pallet_poe;
+
 /// An index to a block.
 pub type BlockNumber = u32;
 
