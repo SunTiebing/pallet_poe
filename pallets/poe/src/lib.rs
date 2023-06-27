@@ -8,11 +8,17 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarking;
+
+pub mod weights;
+
 #[frame_support::pallet]
 pub mod pallet {
-	use frame_support::pallet_prelude::*;
-	use frame_system::pallet_prelude::*;
-	use sp_std::prelude::*;
+	pub use crate::weights::WeightInfo;
+	pub use frame_support::pallet_prelude::*;
+	pub use frame_system::pallet_prelude::*;
+	pub use sp_std::prelude::*;
 
 	#[pallet::pallet]
 	#[pallet::generate_store(pub(super) trait Store)]
@@ -27,6 +33,9 @@ pub mod pallet {
 
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
 		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+
+		/// Weight information for extrinsics in this pallet
+		type WeightInfo: WeightInfo;
 	}
 
 	#[pallet::storage]
@@ -59,7 +68,8 @@ pub mod pallet {
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		#[pallet::weight(0)]
+		#[pallet::call_index(0)]
+		#[pallet::weight(T::WeightInfo::created_claim(bounded_claim.len() as u32))]
 		pub fn created_claim(
 			origin: OriginFor<T>,
 			bounded_claim: BoundedVec<u8, T::MaxClaimLength>,
@@ -77,7 +87,8 @@ pub mod pallet {
 			Ok(().into())
 		}
 
-		#[pallet::weight(0)]
+		#[pallet::call_index(1)]
+		#[pallet::weight(T::WeightInfo::revoke_claim(bounded_claim.len() as u32))]
 		pub fn revoke_claim(
 			origin: OriginFor<T>,
 			bounded_claim: BoundedVec<u8, T::MaxClaimLength>,
@@ -95,7 +106,8 @@ pub mod pallet {
 			Ok(().into())
 		}
 
-		#[pallet::weight(0)]
+		#[pallet::call_index(2)]
+		#[pallet::weight(T::WeightInfo::transfer_claim(bounded_claim.len() as u32))]
 		pub fn transfer_claim(
 			origin: OriginFor<T>,
 			bounded_claim: BoundedVec<u8, T::MaxClaimLength>,

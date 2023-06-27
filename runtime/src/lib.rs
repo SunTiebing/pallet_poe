@@ -288,6 +288,7 @@ impl pallet_template::Config for Runtime {
 impl pallet_poe::Config for Runtime {
 	type MaxClaimLength = ConstU32<512>;
 	type RuntimeEvent = RuntimeEvent;
+	type WeightInfo = pallet_poe::weights::SubstrateWeight<Runtime>;
 }
 
 impl pallet_kitties::Config for Runtime {
@@ -372,7 +373,7 @@ construct_runtime!(
 		Sudo: pallet_sudo,
 		// Include the custom logic from the pallet-template in the runtime.
 		TemplateModule: pallet_template,
-		PalletPoe: pallet_poe,
+		PoeModule: pallet_poe,
 		PalletKitties: pallet_kitties,
 	}
 );
@@ -421,6 +422,7 @@ mod benches {
 		[pallet_balances, Balances]
 		[pallet_timestamp, Timestamp]
 		[pallet_template, TemplateModule]
+		[pallet_poe, PoeModule]
 	);
 }
 
